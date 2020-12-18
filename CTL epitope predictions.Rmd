@@ -1,0 +1,150 @@
+---
+title: "SARS-CoV-2 H-2b epitope predictions"
+author: "Hayley McQuilten"
+date: "10/10/2020"
+output:
+  html_document:
+    df_print: paged
+params:
+  data: 'Input/BL-6 MHC I prediction NetMHCpan 4-1.txt'
+  strong_binder_EL_threshold: 0.5
+  top_binder_EL_threshold: 0.05
+  strong_binder_Aff_threshold: 500
+  top_binder_Aff_threshold: 50
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(viridis)
+library(ggrepel)
+```
+
+## Data import and tidy
+
+```{r Import}
+# Import a .txt file copied from NetMHCpan 4.1 output window, tidy data
+BL6_MHCI <- read_delim(params$data, 
+                       delim = ' ', skip = 18,
+                       col_types = cols(
+                         Pos = col_double(),
+                         MHC = col_character(),
+                         Peptide = col_character(),
+                         Core = col_character(),
+                         Of = col_double(),
+                         Gp = col_double(),
+                         Gl = col_double(),
+                         Ip = col_double(),
+                         Il = col_double(),
+                         Icore = col_character(),
+                         Identity = col_character(),
+                         Score_EL = col_double(),
+                         `%Rank_EL` = col_double(),
+                         Score_BA = col_double(),
+                         `%Rank_BA` = col_double(),
+                         `Aff(nM)` = col_double(),
+                         BindLevel = col_character(),
+                         BindStrength = col_character()),
+                       comment = '--', trim_ws = T)
+```
+Warning message expected here, because no data exists in final 2 columns for all entries that are neither strong nor weak binders. So for many rows, expect 18 columns but actual is 16.
+
+Also, the import file contains section breaks throughout the data table. So some rows will contain values that are inconsistent with the specified `col_type` (eg. words or dashes rather than numbers). 
+
+A summary of the parsing issues:
+```{r Check 1}
+unique(problems(BL6_MHCI)$expected)
+```
+Should be "18 columns" and "a double".
+
+```{r Check 2}
+unique(problems(BL6_MHCI)$actual)
+```
+Should be "16 columns", then a variety of other words and numbers of columns.
+
+```{r Tidy, echo=FALSE}
+tidy <- BL6_MHCI %>%
+  filter(!is.na(Pos)) %>%
+  separate(Identity, c("Protein", "prefix", "suffix"), sep = "_", extra = "drop") %>%
+  select(-BindLevel, -prefix, -suffix) %>%
+  mutate(Domain = case_when(Protein == 'S'& Pos >= 334 & Pos <= 518 ~ "RBD",
+                            !(Protein == 'S'& Pos >= 334 & Pos <= 518) ~ "Rest of virus",
+                            TRUE ~ NA_character_))
+
+# Whole tibble with the proteins in specific order
+tidy <- tidy %>%
+  mutate(Protein = factor(Protein, levels = c("S", "M", "N", "E", "ORF1ab", "ORF3a",
+                                              "ORF6", "ORF7a", "ORF7b", "ORF8", "ORF10")))
+
+# Extra column specifying whether RBD or otherwise
+tidy <- tidy %>%
+  mutate(Domain = case_when(Protein == 'S'& Pos >= 334 & Pos <= 518 ~ "RBD",
+                            !(Protein == 'S'& Pos >= 334 & Pos <= 518) ~ "Rest of virus",
+                            TRUE ~ NA_character_))
+```
+
+
+## Plots
+
+
+```{r Plot, echo=FALSE}
+# Subset and plot
+# strong binders (top 0.5%) % Rank EL vs BA  
+tidy %>%
+  filter(`%Rank_EL` <= params$strong_binder_EL_threshold) %>%
+  ggplot(aes(`%Rank_EL`, y = `%Rank_BA`)) +
+  geom_point(mapping = aes(colour = Protein)) +
+  theme_light() +
+  scale_color_viridis(discrete=TRUE) +
+  labs(title = "Strong binders",
+       x = "% Rank eluted ligand (EL)",
+       y = "% Rank binding affinity (BA)")
+  
+# strong binders (top 0.5%, affinity <= 500nM) % Rank EL vs Aff(nM) 
+tidy %>%
+  filter(`%Rank_EL` <= params$strong_binder_EL_threshold, 
+         `Aff(nM)` <= params$strong_binder_Aff_threshold) %>%
+  ggplot(aes(`%Rank_EL`, y = `Aff(nM)`)) +
+  geom_point(mapping = aes(colour = Protein)) +
+  theme_light() +
+  scale_color_viridis(discrete=TRUE) +
+  labs(title = "Strong binders with affinity <= 500nM",
+       x = "% Rank eluted ligand (EL)",
+       y = "Affinity (nM)")
+
+# top binders (0.05%)
+tidy %>%
+  filter(`%Rank_EL` <= params$top_binder_EL_threshold, 
+         `Aff(nM)` <= params$top_binder_Aff_threshold) %>%
+  ggplot(aes(`%Rank_EL`, y = `Aff(nM)`)) +
+  geom_point(mapping = aes(colour = Protein)) +
+  theme_light() +
+  scale_color_viridis(discrete=TRUE) +
+  geom_text_repel(aes(label = Peptide), size = 2.5) +
+  labs(title = "Strongest binders",
+       x = "% Rank eluted ligand (EL)",
+       y = "Affinity (nM)")
+
+# RBD vs rest of virus EL vs BA
+tidy %>%
+  filter(`%Rank_EL` <= 0.5) %>%
+  ggplot(aes(x =`%Rank_EL`, y = `%Rank_BA`)) +
+  geom_point(mapping = aes(colour = Domain)) +
+  theme_light() +
+  scale_color_manual(values=c("#440154FF", "#BEBEBE80")) +
+  labs(title = "Highlight on RBD-derived epitopes",
+       x = "% Rank eluted ligand (EL)",
+       y = "% Rank binding affinity (BA)")
+
+# RBD vs rest of virus EL vs Aff(nM) strongest binders
+tidy %>%
+  filter(`%Rank_EL` <= params$top_binder_EL_threshold, 
+         `Aff(nM)` <= params$top_binder_Aff_threshold) %>%
+  ggplot(aes(x =`%Rank_EL`, y = `Aff(nM)`)) +
+  geom_point(mapping = aes(colour = Domain)) +
+  theme_light() +
+  scale_color_manual(values=c("#440154FF", "#BEBEBE80")) +
+  labs(title = "Highlight on RBD-derived epitopes, strongest binders",
+       x = "% Rank eluted ligand (EL)",
+       y = "Affinity (nM)")
+```
