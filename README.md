@@ -1,6 +1,6 @@
 # code-snippets
 
-I'm an immunologist learning code to do bioinformatics. I've created this repository to record pieces of code I've written to visualise data or solve problems I've encountered along the way.
+I'm a data enthusiast with a science background who learned code to do bioinformatics. I've created this repository to record pieces of code I've written to visualise data or solve problems I've encountered along the way.
 
 So far these include:
 * a shell script that creates a master list of differentially expressed genes from multiple Nanostring results input files
